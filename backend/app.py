@@ -15,7 +15,9 @@ import os
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+
+# ✅ STRONGER CORS CONFIG (IMPORTANT FIX)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 # ---------------- JWT CONFIG ----------------
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
@@ -36,7 +38,11 @@ def home():
 # ---------------- REGISTER ----------------
 @app.route("/register", methods=["POST"])
 def register():
-    data = request.json
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"message": "Invalid request"}), 400
+
     email = data.get("email")
     password = data.get("password")
 
@@ -46,7 +52,10 @@ def register():
     if users_collection.find_one({"email": email}):
         return jsonify({"message": "User already exists"}), 400
 
-    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+    hashed_password = bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt()
+    )
 
     users_collection.insert_one({
         "email": email,
@@ -58,7 +67,11 @@ def register():
 # ---------------- LOGIN ----------------
 @app.route("/login", methods=["POST"])
 def login():
-    data = request.json
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"message": "Invalid request"}), 400
+
     email = data.get("email")
     password = data.get("password")
 
@@ -89,4 +102,4 @@ def protected():
 
 # ---------------- RUN SERVER ----------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
