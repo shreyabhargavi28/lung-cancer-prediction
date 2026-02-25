@@ -17,7 +17,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # ✅ STRONGER CORS CONFIG (IMPORTANT FIX)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "*"}}, allow_headers=["Content-Type", "Authorization"])
 
 # ---------------- JWT CONFIG ----------------
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
@@ -36,7 +36,7 @@ def home():
     return jsonify({"message": "Backend running successfully!"})
 
 # ---------------- REGISTER ----------------
-@app.route("/register", methods=["POST"])
+@app.route("/register", methods=["POST", "OPTIONS"])
 def register():
     data = request.get_json()
 
@@ -65,7 +65,7 @@ def register():
     return jsonify({"message": "User registered successfully"}), 201
 
 # ---------------- LOGIN ----------------
-@app.route("/login", methods=["POST"])
+@app.route("/login", methods=["POST", "OPTIONS"])
 def login():
     data = request.get_json()
 
