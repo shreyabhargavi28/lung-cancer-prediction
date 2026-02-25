@@ -16,8 +16,16 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# ✅ STRONGER CORS CONFIG (IMPORTANT FIX)
-CORS(app, resources={r"/*": {"origins": "*"}}, allow_headers=["Content-Type", "Authorization"])
+# ✅ SIMPLE AND CORRECT CORS
+CORS(app, supports_credentials=True)
+
+# ✅ HANDLE PREFLIGHT PROPERLY
+@app.after_request
+def after_request(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
 
 # ---------------- JWT CONFIG ----------------
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
@@ -36,7 +44,7 @@ def home():
     return jsonify({"message": "Backend running successfully!"})
 
 # ---------------- REGISTER ----------------
-@app.route("/register", methods=["POST", "OPTIONS"])
+@app.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
 
@@ -65,7 +73,7 @@ def register():
     return jsonify({"message": "User registered successfully"}), 201
 
 # ---------------- LOGIN ----------------
-@app.route("/login", methods=["POST", "OPTIONS"])
+@app.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
 
@@ -102,4 +110,5 @@ def protected():
 
 # ---------------- RUN SERVER ----------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 10000))  # Render uses dynamic port
+    app.run(host="0.0.0.0", port=port)
