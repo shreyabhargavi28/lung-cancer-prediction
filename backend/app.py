@@ -16,16 +16,8 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# ✅ SIMPLE AND CORRECT CORS
-CORS(app, supports_credentials=True)
-
-# ✅ HANDLE PREFLIGHT PROPERLY
-@app.after_request
-def after_request(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-    return response
+# ✅ Correct CORS setup (ONLY this, nothing else)
+CORS(app)
 
 # ---------------- JWT CONFIG ----------------
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
@@ -110,5 +102,5 @@ def protected():
 
 # ---------------- RUN SERVER ----------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # Render uses dynamic port
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
