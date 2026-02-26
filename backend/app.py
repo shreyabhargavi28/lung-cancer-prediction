@@ -26,7 +26,7 @@ app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
 jwt = JWTManager(app)
 
 # ---------------- LOAD TRAINED MODEL ----------------
-model = joblib.load("lung_model.pkl")
+model = joblib.load("lung_risk_model.pkl")
 
 # ---------------- MONGODB CONNECTION ----------------
 MONGO_URI = os.getenv("MONGO_URI")
@@ -34,7 +34,7 @@ client = MongoClient(MONGO_URI)
 
 db = client["lung_cancer_db"]
 users_collection = db["users"]
-predictions_collection = db["predictions"]   # NEW collection
+predictions_collection = db["predictions"]
 
 # ---------------- HOME ----------------
 @app.route("/")
@@ -125,7 +125,6 @@ def predict():
         prediction = model.predict([features])
         result = "High Risk" if prediction[0] == 1 else "Low Risk"
 
-        # Store prediction in MongoDB
         predictions_collection.insert_one({
             "user": current_user,
             "input_data": data,
