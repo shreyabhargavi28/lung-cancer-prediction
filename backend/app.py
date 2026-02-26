@@ -97,6 +97,7 @@ def login():
     return jsonify({"access_token": access_token}), 200
 
 # ---------------- PREDICT ROUTE ----------------
+# ---------------- PREDICT ROUTE ----------------
 @app.route("/predict", methods=["POST"])
 @jwt_required()
 def predict():
@@ -122,16 +123,31 @@ def predict():
             data["bmi"]
         ]
 
-        prediction = model.predict([features])
-        result = "High Risk" if prediction[0] == 1 else "Low Risk"
+        # Get probability of High Risk (class 1)
+        proba = model.predict_proba([features])[0][1]
 
+        # Define 3 risk levels
+        if proba < 0.3:
+            result = "Low Risk"
+        elif proba < 0.7:
+            result = "Medium Risk"
+        else:
+            result = "High Risk"
+
+        probability_percent = round(proba * 100, 2)
+
+        # Store prediction in MongoDB
         predictions_collection.insert_one({
             "user": current_user,
             "input_data": data,
-            "prediction": result
+            "prediction": result,
+            "probability": probability_percent
         })
 
-        return jsonify({"prediction": result}), 200
+        return jsonify({
+            "prediction": result,
+            "probability": probability_percent
+        }), 200
 
     except KeyError as e:
         return jsonify({"message": f"Missing field: {str(e)}"}), 400
