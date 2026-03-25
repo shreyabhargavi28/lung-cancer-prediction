@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import (
@@ -97,7 +96,6 @@ def login():
     return jsonify({"access_token": access_token}), 200
 
 # ---------------- PREDICT ROUTE ----------------
-# ---------------- PREDICT ROUTE ----------------
 @app.route("/predict", methods=["POST"])
 @jwt_required()
 def predict():
@@ -108,12 +106,21 @@ def predict():
         return jsonify({"message": "Invalid request"}), 400
 
     try:
+        # INPUT VALIDATION
+        if data["smoking_years"] > data["age"]:
+            return jsonify({
+                "message": "Invalid input: smoking years cannot exceed age"
+            }), 400
+
+        # FEATURE ENGINEERING (same as training)
+        smoking_intensity = data["smoking_years"] * data["cigarettes_per_day"]
+        age_scaled = data["age"] / 100
+
         features = [
-            data["age"],
+            age_scaled,
             data["gender"],
             data["smoker"],
-            data["smoking_years"],
-            data["cigarettes_per_day"],
+            smoking_intensity,
             data["air_pollution_index"],
             data["chest_pain"],
             data["shortness_of_breath"],
@@ -123,10 +130,10 @@ def predict():
             data["bmi"]
         ]
 
-        # Get probability of High Risk (class 1)
+        # PREDICTION
         proba = model.predict_proba([features])[0][1]
 
-        # Define 3 risk levels
+        # RISK LEVEL
         if proba < 0.3:
             result = "Low Risk"
         elif proba < 0.7:
@@ -136,7 +143,7 @@ def predict():
 
         probability_percent = round(proba * 100, 2)
 
-        # Store prediction in MongoDB
+        # STORE IN DB
         predictions_collection.insert_one({
             "user": current_user,
             "input_data": data,
@@ -154,7 +161,7 @@ def predict():
     except Exception as e:
         return jsonify({"message": str(e)}), 500
 
-# ---------------- PROTECTED TEST ROUTE ----------------
+# ---------------- PROTECTED ROUTE ----------------
 @app.route("/protected", methods=["GET"])
 @jwt_required()
 def protected():
