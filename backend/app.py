@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 import bcrypt
 import os
 import joblib
+import shap
+import numpy as np
 
 # ---------------- LOAD ENV ----------------
 load_dotenv()
@@ -24,10 +26,14 @@ CORS(app)
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
 jwt = JWTManager(app)
 
-# ---------------- LOAD TRAINED MODEL ----------------
-model = joblib.load("lung_risk_model.pkl")
+# ---------------- LOAD MODEL + SCALER ----------------
+model = joblib.load("lung_model.pkl")
+scaler = joblib.load("scaler.pkl")
 
-# ---------------- MONGODB CONNECTION ----------------
+# ---------------- SHAP EXPLAINER ----------------
+explainer = shap.TreeExplainer(model)
+
+# ---------------- MONGODB ----------------
 MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 
@@ -45,22 +51,13 @@ def home():
 def register():
     data = request.get_json()
 
-    if not data:
-        return jsonify({"message": "Invalid request"}), 400
-
     email = data.get("email")
     password = data.get("password")
-
-    if not email or not password:
-        return jsonify({"message": "Email and password required"}), 400
 
     if users_collection.find_one({"email": email}):
         return jsonify({"message": "User already exists"}), 400
 
-    hashed_password = bcrypt.hashpw(
-        password.encode("utf-8"),
-        bcrypt.gensalt()
-    )
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
 
     users_collection.insert_one({
         "email": email,
@@ -74,49 +71,31 @@ def register():
 def login():
     data = request.get_json()
 
-    if not data:
-        return jsonify({"message": "Invalid request"}), 400
+    user = users_collection.find_one({"email": data.get("email")})
 
-    email = data.get("email")
-    password = data.get("password")
-
-    if not email or not password:
-        return jsonify({"message": "Email and password required"}), 400
-
-    user = users_collection.find_one({"email": email})
-
-    if not user:
+    if not user or not bcrypt.checkpw(data.get("password").encode("utf-8"), user["password"]):
         return jsonify({"message": "Invalid credentials"}), 401
 
-    if not bcrypt.checkpw(password.encode("utf-8"), user["password"]):
-        return jsonify({"message": "Invalid credentials"}), 401
-
-    access_token = create_access_token(identity=email)
-
+    access_token = create_access_token(identity=data.get("email"))
     return jsonify({"access_token": access_token}), 200
 
-# ---------------- PREDICT ROUTE ----------------
+# ---------------- PREDICT ----------------
 @app.route("/predict", methods=["POST"])
 @jwt_required()
 def predict():
     current_user = get_jwt_identity()
     data = request.get_json()
 
-    if not data:
-        return jsonify({"message": "Invalid request"}), 400
-
     try:
-        # INPUT VALIDATION
+        # VALIDATION
         if data["smoking_years"] > data["age"]:
-            return jsonify({
-                "message": "Invalid input: smoking years cannot exceed age"
-            }), 400
+            return jsonify({"message": "Smoking years cannot exceed age"}), 400
 
         # FEATURE ENGINEERING (same as training)
         smoking_intensity = data["smoking_years"] * data["cigarettes_per_day"]
         age_scaled = data["age"] / 100
 
-        features = [
+        features = np.array([[
             age_scaled,
             data["gender"],
             data["smoker"],
@@ -128,20 +107,44 @@ def predict():
             data["asthma"],
             data["family_history_cancer"],
             data["bmi"]
-        ]
+        ]])
+
+        # SCALE (🔥 YOU WERE MISSING THIS)
+        features_scaled = scaler.transform(features)
 
         # PREDICTION
-        proba = model.predict_proba([features])[0][1]
+        prediction = model.predict(features_scaled)[0]
+        probability = model.predict_proba(features_scaled)[0][1]
 
         # RISK LEVEL
-        if proba < 0.3:
+        if probability < 0.3:
             result = "Low Risk"
-        elif proba < 0.7:
+        elif probability < 0.7:
             result = "Medium Risk"
         else:
             result = "High Risk"
 
-        probability_percent = round(proba * 100, 2)
+        probability_percent = round(probability * 100, 2)
+
+        # ---------------- SHAP ----------------
+        shap_values = explainer.shap_values(features_scaled)
+        shap_contributions = shap_values[1][0]
+
+        feature_names = [
+            "Age",
+            "Gender",
+            "Smoker",
+            "Smoking Intensity",
+            "Air Pollution",
+            "Chest Pain",
+            "Shortness of Breath",
+            "Chronic Cough",
+            "Asthma",
+            "Family History",
+            "BMI"
+        ]
+
+        shap_output = dict(zip(feature_names, shap_contributions.tolist()))
 
         # STORE IN DB
         predictions_collection.insert_one({
@@ -153,25 +156,21 @@ def predict():
 
         return jsonify({
             "prediction": result,
-            "probability": probability_percent
+            "probability": probability_percent,
+            "risk_level": result,
+            "shap_values": shap_output
         }), 200
 
-    except KeyError as e:
-        return jsonify({"message": f"Missing field: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"message": str(e)}), 500
 
-# ---------------- PROTECTED ROUTE ----------------
+# ---------------- PROTECTED ----------------
 @app.route("/protected", methods=["GET"])
 @jwt_required()
 def protected():
-    current_user = get_jwt_identity()
-    return jsonify({
-        "message": "Access granted!",
-        "logged_in_as": current_user
-    })
+    return jsonify({"message": "Access granted!"})
 
-# ---------------- RUN SERVER ----------------
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
