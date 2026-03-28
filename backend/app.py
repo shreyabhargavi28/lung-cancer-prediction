@@ -30,8 +30,8 @@ jwt = JWTManager(app)
 MODEL_PATH = "lung_model.pkl"
 SCALER_PATH = "scaler.pkl"
 
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1ApAMww9zfTradgjXM0sfd-KkuI4i_gIx"
-SCALER_URL = "https://drive.google.com/uc?export=download&id=1gMDnah5kVkBIqJ5xUQLMmnnGpv0K6g8f"
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1haduerXbsIbkx7JO9aJ6tPXHpAhdMh5z"
+SCALER_URL = "https://drive.google.com/uc?export=download&id=163eFkC72_tUqXIryqK67rpsw7b_buBOK"
 
 # Download model if not present
 if not os.path.exists(MODEL_PATH):
