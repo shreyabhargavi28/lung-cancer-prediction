@@ -26,30 +26,43 @@ CORS(app)
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
 jwt = JWTManager(app)
 
-# ---------------- LOAD MODEL + SCALER ----------------
+# ---------------- MODEL PATHS ----------------
 MODEL_PATH = "lung_model.pkl"
 SCALER_PATH = "scaler.pkl"
 
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1ybatCsCwLbpGcbRo_PGvmVv_xfHq4FFM"
-SCALER_URL = "https://drive.google.com/uc?export=download&id=1bErPRUcn7sydSTaXXfab0aBUeLRUPJhg"
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1AOvJYxmhhSFQ9nnEgORaEJljyZ_Z1pqk"
+SCALER_URL = "https://drive.google.com/uc?export=download&id=1YdpyKAna8q_QvopxtI7M3fMFIZj15ffy"
 
-# Download model if not present
+# ---------------- DOWNLOAD FUNCTION ----------------
+def download_file(url, filename):
+    print(f"Downloading {filename}...")
+    response = requests.get(url, stream=True)
+
+    if response.status_code != 200:
+        raise Exception(f"Failed to download {filename}")
+
+    with open(filename, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+    print(f"{filename} downloaded successfully")
+
+# ---------------- DOWNLOAD IF NOT EXISTS ----------------
 if not os.path.exists(MODEL_PATH):
-    print("Downloading model...")
-    r = requests.get(MODEL_URL)
-    with open(MODEL_PATH, "wb") as f:
-        f.write(r.content)
+    download_file(MODEL_URL, MODEL_PATH)
 
-# Download scaler if not present
 if not os.path.exists(SCALER_PATH):
-    print("Downloading scaler...")
-    r = requests.get(SCALER_URL)
-    with open(SCALER_PATH, "wb") as f:
-        f.write(r.content)
+    download_file(SCALER_URL, SCALER_PATH)
 
-# Load model and scaler
-model = joblib.load(MODEL_PATH)
-scaler = joblib.load(SCALER_PATH)
+# ---------------- LOAD MODEL ----------------
+try:
+    model = joblib.load(MODEL_PATH)
+    scaler = joblib.load(SCALER_PATH)
+    print("Model and scaler loaded successfully")
+except Exception as e:
+    print("Error loading model:", e)
+    raise e
 
 # ---------------- MONGODB ----------------
 MONGO_URI = os.getenv("MONGO_URI")
@@ -105,15 +118,13 @@ def predict():
     data = request.get_json()
 
     try:
-        # VALIDATION
         if data["smoking_years"] > data["age"]:
             return jsonify({"message": "Smoking years cannot exceed age"}), 400
 
-        # FEATURE ENGINEERING
         smoking_intensity = data["smoking_years"] * data["cigarettes_per_day"]
         age_scaled = data["age"] / 100
 
-        features = np.array([[
+        features = np.array([[ 
             age_scaled,
             data["gender"],
             data["smoker"],
@@ -127,14 +138,11 @@ def predict():
             data["bmi"]
         ]])
 
-        # SCALE
         features_scaled = scaler.transform(features)
 
-        # PREDICTION
         prediction = model.predict(features_scaled)[0]
         probability = model.predict_proba(features_scaled)[0][1]
 
-        # RISK LEVEL
         if probability < 0.3:
             result = "Low Risk"
         elif probability < 0.7:
@@ -144,19 +152,10 @@ def predict():
 
         probability_percent = round(probability * 100, 2)
 
-        # ---------------- CONTRIBUTION LOGIC ----------------
         feature_names = [
-            "Age",
-            "Gender",
-            "Smoker",
-            "Smoking Intensity",
-            "Air Pollution",
-            "Chest Pain",
-            "Shortness of Breath",
-            "Chronic Cough",
-            "Asthma",
-            "Family History",
-            "BMI"
+            "Age", "Gender", "Smoker", "Smoking Intensity",
+            "Air Pollution", "Chest Pain", "Shortness of Breath",
+            "Chronic Cough", "Asthma", "Family History", "BMI"
         ]
 
         raw_values = features[0]
@@ -165,7 +164,6 @@ def predict():
 
         shap_output = dict(zip(feature_names, contributions))
 
-        # STORE IN DB
         predictions_collection.insert_one({
             "user": current_user,
             "input_data": data,
