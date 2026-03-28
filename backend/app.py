@@ -13,6 +13,7 @@ import os
 import joblib
 import shap
 import numpy as np
+import requests
 
 # ---------------- LOAD ENV ----------------
 load_dotenv()
@@ -27,8 +28,30 @@ app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
 jwt = JWTManager(app)
 
 # ---------------- LOAD MODEL + SCALER ----------------
-model = joblib.load("lung_model.pkl")
-scaler = joblib.load("scaler.pkl")
+MODEL_PATH = "lung_model.pkl"
+SCALER_PATH = "scaler.pkl"
+
+# 🔥 PUT YOUR GOOGLE DRIVE LINKS HERE
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1g6Cxm6O8QW4e_0ajoTyxIm7LRISN0eRY"
+SCALER_URL = "https://drive.google.com/uc?export=download&id=19a9pohZ242N1DvJDm6vjUrf7v7-Oj6Xc"
+
+# Download model if not present
+if not os.path.exists(MODEL_PATH):
+    print("Downloading model...")
+    r = requests.get(MODEL_URL)
+    with open(MODEL_PATH, "wb") as f:
+        f.write(r.content)
+
+# Download scaler if not present
+if not os.path.exists(SCALER_PATH):
+    print("Downloading scaler...")
+    r = requests.get(SCALER_URL)
+    with open(SCALER_PATH, "wb") as f:
+        f.write(r.content)
+
+# Load model and scaler
+model = joblib.load(MODEL_PATH)
+scaler = joblib.load(SCALER_PATH)
 
 # ---------------- SHAP EXPLAINER ----------------
 explainer = shap.TreeExplainer(model)
@@ -91,7 +114,7 @@ def predict():
         if data["smoking_years"] > data["age"]:
             return jsonify({"message": "Smoking years cannot exceed age"}), 400
 
-        # FEATURE ENGINEERING (same as training)
+        # FEATURE ENGINEERING
         smoking_intensity = data["smoking_years"] * data["cigarettes_per_day"]
         age_scaled = data["age"] / 100
 
@@ -109,7 +132,7 @@ def predict():
             data["bmi"]
         ]])
 
-        # SCALE (🔥 YOU WERE MISSING THIS)
+        # SCALE
         features_scaled = scaler.transform(features)
 
         # PREDICTION
