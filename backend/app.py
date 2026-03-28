@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 import bcrypt
 import os
 import joblib
-import shap
 import numpy as np
 import requests
 
@@ -31,9 +30,8 @@ jwt = JWTManager(app)
 MODEL_PATH = "lung_model.pkl"
 SCALER_PATH = "scaler.pkl"
 
-# 🔥 PUT YOUR GOOGLE DRIVE LINKS HERE
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1g6Cxm6O8QW4e_0ajoTyxIm7LRISN0eRY"
-SCALER_URL = "https://drive.google.com/uc?export=download&id=19a9pohZ242N1DvJDm6vjUrf7v7-Oj6Xc"
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1ApAMww9zfTradgjXM0sfd-KkuI4i_gIx"
+SCALER_URL = "https://drive.google.com/uc?export=download&id=1gMDnah5kVkBIqJ5xUQLMmnnGpv0K6g8f"
 
 # Download model if not present
 if not os.path.exists(MODEL_PATH):
@@ -52,9 +50,6 @@ if not os.path.exists(SCALER_PATH):
 # Load model and scaler
 model = joblib.load(MODEL_PATH)
 scaler = joblib.load(SCALER_PATH)
-
-# ---------------- SHAP EXPLAINER ----------------
-explainer = shap.TreeExplainer(model)
 
 # ---------------- MONGODB ----------------
 MONGO_URI = os.getenv("MONGO_URI")
@@ -149,10 +144,7 @@ def predict():
 
         probability_percent = round(probability * 100, 2)
 
-        # ---------------- SHAP ----------------
-        shap_values = explainer.shap_values(features_scaled)
-        shap_contributions = shap_values[1][0]
-
+        # ---------------- CONTRIBUTION LOGIC ----------------
         feature_names = [
             "Age",
             "Gender",
@@ -167,7 +159,11 @@ def predict():
             "BMI"
         ]
 
-        shap_output = dict(zip(feature_names, shap_contributions.tolist()))
+        raw_values = features[0]
+        total = sum(abs(x) for x in raw_values) + 1e-6
+        contributions = [round(abs(x)/total, 3) for x in raw_values]
+
+        shap_output = dict(zip(feature_names, contributions))
 
         # STORE IN DB
         predictions_collection.insert_one({
