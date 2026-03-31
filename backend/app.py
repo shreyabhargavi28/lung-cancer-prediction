@@ -72,6 +72,7 @@ client = MongoClient(MONGO_URI)
 db = client["lung_cancer_db"]
 users_collection = db["users"]
 predictions_collection = db["predictions"]
+feedback_collection = db["feedback"]   # ✅ NEW
 
 # ---------------- HOME ----------------
 @app.route("/")
@@ -119,11 +120,9 @@ def predict():
     data = request.get_json()
 
     try:
-        # Validation
         if data["smoking_years"] > data["age"]:
             return jsonify({"message": "Smoking years cannot exceed age"}), 400
 
-        # Feature engineering
         smoking_intensity = data["smoking_years"] * data["cigarettes_per_day"]
         age_scaled = data["age"] / 100
 
@@ -143,11 +142,9 @@ def predict():
 
         features_scaled = scaler.transform(features)
 
-        # Prediction
         prediction = model.predict(features_scaled)[0]
         probability = model.predict_proba(features_scaled)[0][1]
 
-        # Risk classification
         if probability < 0.3:
             result = "Low Risk"
         elif probability < 0.7:
@@ -157,7 +154,6 @@ def predict():
 
         probability_percent = round(probability * 100, 2)
 
-        # Contribution logic (SHAP-like)
         feature_names = [
             "Age", "Gender", "Smoker", "Smoking Intensity",
             "Air Pollution", "Chest Pain", "Shortness of Breath",
@@ -170,7 +166,6 @@ def predict():
 
         shap_output = dict(zip(feature_names, contributions))
 
-        # Save to MongoDB
         predictions_collection.insert_one({
             "user": current_user,
             "input_data": data,
@@ -208,11 +203,24 @@ def get_history():
 
     return jsonify(predictions), 200
 
-# ---------------- PROTECTED ----------------
-@app.route("/protected", methods=["GET"])
+# ---------------- FEEDBACK ----------------
+@app.route("/feedback", methods=["POST"])
 @jwt_required()
-def protected():
-    return jsonify({"message": "Access granted!"})
+def submit_feedback():
+    current_user = get_jwt_identity()
+    data = request.get_json()
+
+    feedback_collection.insert_one({
+        "user": current_user,
+        "name": data.get("name"),
+        "email": data.get("email"),
+        "category": data.get("category"),
+        "rating": data.get("rating"),
+        "message": data.get("message"),
+        "timestamp": datetime.utcnow()
+    })
+
+    return jsonify({"message": "Feedback submitted successfully"}), 200
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
