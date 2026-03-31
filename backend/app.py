@@ -119,9 +119,11 @@ def predict():
     data = request.get_json()
 
     try:
+        # Validation
         if data["smoking_years"] > data["age"]:
             return jsonify({"message": "Smoking years cannot exceed age"}), 400
 
+        # Feature engineering
         smoking_intensity = data["smoking_years"] * data["cigarettes_per_day"]
         age_scaled = data["age"] / 100
 
@@ -141,9 +143,11 @@ def predict():
 
         features_scaled = scaler.transform(features)
 
+        # Prediction
         prediction = model.predict(features_scaled)[0]
         probability = model.predict_proba(features_scaled)[0][1]
 
+        # Risk classification
         if probability < 0.3:
             result = "Low Risk"
         elif probability < 0.7:
@@ -153,6 +157,7 @@ def predict():
 
         probability_percent = round(probability * 100, 2)
 
+        # Contribution logic (SHAP-like)
         feature_names = [
             "Age", "Gender", "Smoker", "Smoking Intensity",
             "Air Pollution", "Chest Pain", "Shortness of Breath",
@@ -165,7 +170,7 @@ def predict():
 
         shap_output = dict(zip(feature_names, contributions))
 
-        # SAVE TO DATABASE
+        # Save to MongoDB
         predictions_collection.insert_one({
             "user": current_user,
             "input_data": data,
