@@ -13,6 +13,7 @@ import os
 import joblib
 import numpy as np
 import requests
+from datetime import datetime
 
 # ---------------- LOAD ENV ----------------
 load_dotenv()
@@ -164,11 +165,14 @@ def predict():
 
         shap_output = dict(zip(feature_names, contributions))
 
+        # SAVE TO DATABASE
         predictions_collection.insert_one({
             "user": current_user,
             "input_data": data,
             "prediction": result,
-            "probability": probability_percent
+            "probability": probability_percent,
+            "shap_values": shap_output,
+            "timestamp": datetime.utcnow()
         })
 
         return jsonify({
@@ -180,6 +184,24 @@ def predict():
 
     except Exception as e:
         return jsonify({"message": str(e)}), 500
+
+# ---------------- HISTORY ----------------
+@app.route("/history", methods=["GET"])
+@jwt_required()
+def get_history():
+    current_user = get_jwt_identity()
+
+    predictions = list(
+        predictions_collection.find({"user": current_user})
+        .sort("timestamp", -1)
+    )
+
+    for p in predictions:
+        p["_id"] = str(p["_id"])
+        if "timestamp" in p:
+            p["timestamp"] = p["timestamp"].isoformat()
+
+    return jsonify(predictions), 200
 
 # ---------------- PROTECTED ----------------
 @app.route("/protected", methods=["GET"])
