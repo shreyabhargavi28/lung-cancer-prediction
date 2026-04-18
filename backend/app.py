@@ -13,7 +13,7 @@ import os
 import joblib
 import numpy as np
 import requests
-import shap   # ✅ NEW
+import shap
 from datetime import datetime
 
 # ---------------- LOAD ENV ----------------
@@ -62,10 +62,8 @@ try:
     model = joblib.load(MODEL_PATH)
     scaler = joblib.load(SCALER_PATH)
 
-    # ✅ SHAP EXPLAINER
     explainer = shap.TreeExplainer(model)
 
-    # ✅ MODEL INFO
     MODEL_ACCURACY = 84.0
     MODEL_NAME = "Random Forest"
 
@@ -170,22 +168,21 @@ def predict():
             "Chronic Cough", "Asthma", "Family History", "BMI"
         ]
 
-        # ---------------- REAL SHAP ----------------
+        # ---------------- FINAL SHAP FIX ----------------
         shap_values = explainer.shap_values(features_scaled)
 
-        # Handle SHAP output properly
         if isinstance(shap_values, list):
-            contributions = shap_values[1][0]   # for class 1
+            contributions = shap_values[1][0]
         else:
             contributions = shap_values[0]
 
-        # Convert safely to float
+        contributions = np.array(contributions).flatten()
+
         shap_output = {
-            feature_names[i]: float(np.round(contributions[i].item(), 4))
+            feature_names[i]: float(np.round(contributions[i], 4))
             for i in range(len(feature_names))
         }
 
-        # Sort by importance
         shap_output = dict(sorted(
             shap_output.items(),
             key=lambda x: abs(x[1]),
