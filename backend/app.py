@@ -13,6 +13,7 @@ import os
 import joblib
 import numpy as np
 import requests
+import shap   # ✅ NEW
 from datetime import datetime
 
 # ---------------- LOAD ENV ----------------
@@ -60,9 +61,16 @@ if not os.path.exists(SCALER_PATH):
 try:
     model = joblib.load(MODEL_PATH)
     scaler = joblib.load(SCALER_PATH)
-    print("Model and scaler loaded successfully")
+
+    # ✅ SHAP EXPLAINER
+    explainer = shap.TreeExplainer(model)
+
+    # ✅ MODEL INFO
     MODEL_ACCURACY = 84.0
     MODEL_NAME = "Random Forest"
+
+    print("Model, scaler, and SHAP loaded successfully")
+
 except Exception as e:
     print("Error loading model:", e)
     raise e
@@ -74,7 +82,7 @@ client = MongoClient(MONGO_URI)
 db = client["lung_cancer_db"]
 users_collection = db["users"]
 predictions_collection = db["predictions"]
-feedback_collection = db["feedback"]   # ✅ NEW
+feedback_collection = db["feedback"]
 
 # ---------------- HOME ----------------
 @app.route("/")
@@ -162,17 +170,32 @@ def predict():
             "Chronic Cough", "Asthma", "Family History", "BMI"
         ]
 
-        raw_values = features[0]
-        total = sum(abs(x) for x in raw_values) + 1e-6
-        contributions = [round(abs(x)/total, 3) for x in raw_values]
+        # ---------------- REAL SHAP ----------------
+        shap_values = explainer.shap_values(features_scaled)
 
-        shap_output = dict(zip(feature_names, contributions))
+        try:
+            contributions = shap_values[1][0]
+        except:
+            contributions = shap_values[0]
+
+        shap_output = {
+            feature_names[i]: float(round(contributions[i], 4))
+            for i in range(len(feature_names))
+        }
+
+        # Sort by importance
+        shap_output = dict(sorted(
+            shap_output.items(),
+            key=lambda x: abs(x[1]),
+            reverse=True
+        ))
 
         predictions_collection.insert_one({
             "user": current_user,
             "input_data": data,
             "prediction": result,
             "probability": probability_percent,
+            "accuracy": MODEL_ACCURACY,
             "shap_values": shap_output,
             "timestamp": datetime.utcnow()
         })
@@ -229,4 +252,4 @@ def submit_feedback():
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=port)
