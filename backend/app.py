@@ -179,11 +179,10 @@ def predict():
             contributions = shap_values[0]
 
         shap_output = {
-            feature_names[i]: float(round(contributions[i], 4))
+            feature_names[i]: float(np.round(contributions[i], 4))   # ✅ FIX HERE
             for i in range(len(feature_names))
         }
 
-        # Sort by importance
         shap_output = dict(sorted(
             shap_output.items(),
             key=lambda x: abs(x[1]),
