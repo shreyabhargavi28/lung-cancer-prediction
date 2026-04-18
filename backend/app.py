@@ -173,16 +173,19 @@ def predict():
         # ---------------- REAL SHAP ----------------
         shap_values = explainer.shap_values(features_scaled)
 
-        try:
-            contributions = shap_values[1][0]
-        except:
+        # Handle SHAP output properly
+        if isinstance(shap_values, list):
+            contributions = shap_values[1][0]   # for class 1
+        else:
             contributions = shap_values[0]
 
+        # Convert safely to float
         shap_output = {
-            feature_names[i]: float(np.round(contributions[i], 4))   # ✅ FIX HERE
+            feature_names[i]: float(np.round(contributions[i].item(), 4))
             for i in range(len(feature_names))
         }
 
+        # Sort by importance
         shap_output = dict(sorted(
             shap_output.items(),
             key=lambda x: abs(x[1]),
