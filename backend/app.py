@@ -61,6 +61,8 @@ try:
     model = joblib.load(MODEL_PATH)
     scaler = joblib.load(SCALER_PATH)
     print("Model and scaler loaded successfully")
+    MODEL_ACCURACY = 84.0
+    MODEL_NAME = "Random Forest"
 except Exception as e:
     print("Error loading model:", e)
     raise e
@@ -179,6 +181,8 @@ def predict():
             "prediction": result,
             "probability": probability_percent,
             "risk_level": result,
+            "accuracy": MODEL_ACCURACY,
+            "model_name": MODEL_NAME,
             "shap_values": shap_output
         }), 200
 
