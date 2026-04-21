@@ -55,8 +55,8 @@ if not os.path.exists(SCALER_PATH):
 
 # ---------------- LOAD MODEL ----------------
 try:
-    model    = joblib.load(MODEL_PATH)
-    scaler   = joblib.load(SCALER_PATH)
+    model     = joblib.load(MODEL_PATH)
+    scaler    = joblib.load(SCALER_PATH)
     explainer = shap.TreeExplainer(model)
 
     MODEL_ACCURACY = 84.0
@@ -135,8 +135,8 @@ def predict():
 
         features_scaled = scaler.transform(features)
 
-        prediction   = model.predict(features_scaled)[0]
-        probability  = model.predict_proba(features_scaled)[0][1]
+        prediction  = model.predict(features_scaled)[0]
+        probability = model.predict_proba(features_scaled)[0][1]
 
         if probability < 0.3:
             result = "Low Risk"
@@ -153,7 +153,7 @@ def predict():
             "Chronic Cough", "Asthma", "Family History", "BMI"
         ]
 
-        # ── SHAP values ──────────────────────────────────────────────────────
+        # ── Compute SHAP values ───────────────────────────────────────────────
         shap_values = explainer.shap_values(features_scaled)
 
         if isinstance(shap_values, list):
@@ -163,36 +163,44 @@ def predict():
 
         contributions = np.array(contributions).flatten()
 
-        # ── Map which raw feature index maps to which user input field ───────
-        # feature order: age_scaled, gender, smoker, smoking_intensity,
-        #                air_pollution_index, chest_pain, shortness_of_breath,
-        #                chronic_cough, asthma, family_history_cancer, bmi
+        # ── Smart SHAP correction for binary features ─────────────────────────
         #
-        # For BINARY features where the user chose 0 (No/absent), we zero
-        # out the SHAP contribution so the chart only shows features that are
-        # actually present/active for this patient.
+        # Rule: For binary (0/1) features where user answered 0 (No/absent):
+        #   - If SHAP is POSITIVE  → zero it out (misleading: says "increases
+        #     risk" but user doesn't have this condition — it's a baseline
+        #     artifact, not a real contribution)
+        #   - If SHAP is NEGATIVE  → KEEP it (correctly shows this absence
+        #     is PROTECTING the user, e.g. not smoking reduces risk)
         #
-        # We do NOT zero continuous features (age, bmi, air_pollution,
-        # smoking_intensity) because a value of 0 there is still meaningful.
+        # This way:
+        #   • "No smoking" still shows as a green protective bar ✓
+        #   • "No shortness of breath" won't show a false red bar ✓
+        #   • "Yes smoking" shows a red risk bar ✓
+        #   • "Yes shortness of breath" shows a red risk bar ✓
 
+        # feature index → data key mapping for binary features
         binary_feature_map = {
-            # feature_names index : data key
-            1:  "gender",                 # Gender  (0=Female treated as absent)
-            2:  "smoker",                 # Smoker
-            5:  "chest_pain",             # Chest Pain
-            6:  "shortness_of_breath",    # Shortness of Breath
-            7:  "chronic_cough",          # Chronic Cough
-            8:  "asthma",                 # Asthma
-            9:  "family_history_cancer",  # Family History
+            1: "gender",                 # Gender
+            2: "smoker",                 # Smoker
+            5: "chest_pain",             # Chest Pain
+            6: "shortness_of_breath",    # Shortness of Breath
+            7: "chronic_cough",          # Chronic Cough
+            8: "asthma",                 # Asthma
+            9: "family_history_cancer",  # Family History
         }
 
         for feat_idx, data_key in binary_feature_map.items():
             if int(data.get(data_key, 0)) == 0:
-                contributions[feat_idx] = 0.0
+                # Only zero out if it's falsely showing as risk-INCREASING
+                # Keep negative values — they are genuine protective factors
+                if contributions[feat_idx] > 0:
+                    contributions[feat_idx] = 0.0
 
-        # Also zero out Smoking Intensity (index 3) when smoker == 0
+        # Zero out Smoking Intensity when user is not a smoker
+        # (smoking_years=0, cigarettes=0 → intensity=0, no contribution)
         if int(data.get("smoker", 0)) == 0:
-            contributions[3] = 0.0
+            if contributions[3] > 0:
+                contributions[3] = 0.0
 
         shap_output = {
             feature_names[i]: float(np.round(contributions[i], 4))
