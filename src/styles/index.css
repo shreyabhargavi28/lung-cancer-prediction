@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 min-h-screen;
+  }
+  
+  * {
+    @apply font-sans;
+  }
+}
+
+@layer components {
+  .gradient-text {
+    @apply bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent;
+  }
+  
+  .card-shadow {
+    @apply shadow-lg shadow-purple-100/50;
+  }
+  
+  .btn-primary {
+    @apply bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-xl 
+           font-semibold hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 
+           transition-all duration-300 shadow-lg hover:shadow-xl;
+  }
+  
+  .btn-secondary {
+    @apply bg-white text-gray-700 border-2 border-purple-200 px-6 py-3 rounded-xl 
+           font-semibold hover:border-purple-400 hover:bg-purple-50 transform hover:scale-105 
+           transition-all duration-300;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 border-2 border-purple-200 rounded-xl focus:border-purple-500 
+           focus:outline-none focus:ring-2 focus:ring-purple-200 transition-all duration-300 
+           bg-white/80 backdrop-blur-sm;
+  }
+  
+  .card {
+    @apply bg-white/90 backdrop-blur-sm rounded-2xl card-shadow p-6 border border-purple-100;
+  }
+}
