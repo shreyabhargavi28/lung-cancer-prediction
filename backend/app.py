@@ -113,24 +113,24 @@ def predict():
     data         = request.get_json()
 
     try:
-        if data["smoking_years"] > data["age"]:
+        if int(data.get("smoking_years", 0)) > int(data.get("age", 0)):
             return jsonify({"message": "Smoking years cannot exceed age"}), 400
 
-        smoking_intensity = data["smoking_years"] * data["cigarettes_per_day"]
-        age_scaled        = data["age"] / 100
+        smoking_intensity = int(data.get("smoking_years", 0)) * int(data.get("cigarettes_per_day", 0))
+        age_scaled        = int(data.get("age", 0)) / 100
 
         features = np.array([[
             age_scaled,
-            data["gender"],
-            data["smoker"],
+            int(data.get("gender", 1)),
+            int(data.get("smoker", 0)),
             smoking_intensity,
-            data["air_pollution_index"],
-            data["chest_pain"],
-            data["shortness_of_breath"],
-            data["chronic_cough"],
-            data["asthma"],
-            data["family_history_cancer"],
-            data["bmi"]
+            int(data.get("air_pollution_index", 3)),
+            int(data.get("chest_pain", 0)),
+            int(data.get("shortness_of_breath", 0)),
+            int(data.get("chronic_cough", 0)),
+            int(data.get("asthma", 0)),
+            int(data.get("family_history_cancer", 0)),
+            float(data.get("bmi", 25))
         ]])
 
         features_scaled = scaler.transform(features)
@@ -163,22 +163,16 @@ def predict():
 
         contributions = np.array(contributions).flatten()
 
-        # ── Smart SHAP correction for binary features ─────────────────────────
+        # ── CORRECTED Smart SHAP correction for binary features ─────────────────
         #
-        # Rule: For binary (0/1) features where user answered 0 (No/absent):
-        #   - If SHAP is POSITIVE  → zero it out (misleading: says "increases
-        #     risk" but user doesn't have this condition — it's a baseline
-        #     artifact, not a real contribution)
-        #   - If SHAP is NEGATIVE  → KEEP it (correctly shows this absence
-        #     is PROTECTING the user, e.g. not smoking reduces risk)
-        #
-        # This way:
-        #   • "No smoking" still shows as a green protective bar ✓
-        #   • "No shortness of breath" won't show a false red bar ✓
-        #   • "Yes smoking" shows a red risk bar ✓
-        #   • "Yes shortness of breath" shows a red risk bar ✓
+        # Rule: For binary (0/1) features:
+        #   - If user answered 1 (Yes/present):
+        #       * Positive SHAP → KEEP (correctly increases risk)
+        #       * Negative SHAP → zero it out (misleading - shouldn't decrease risk if present)
+        #   - If user answered 0 (No/absent):
+        #       * Negative SHAP → KEEP (correctly shows protection)
+        #       * Positive SHAP → zero it out (misleading artifact)
 
-        # feature index → data key mapping for binary features
         binary_feature_map = {
             1: "gender",                 # Gender
             2: "smoker",                 # Smoker
@@ -190,17 +184,32 @@ def predict():
         }
 
         for feat_idx, data_key in binary_feature_map.items():
-            if int(data.get(data_key, 0)) == 0:
-                # Only zero out if it's falsely showing as risk-INCREASING
-                # Keep negative values — they are genuine protective factors
+            user_value = int(data.get(data_key, 0))
+            
+            if user_value == 0:
+                # User answered NO - should be protective (negative) or neutral
                 if contributions[feat_idx] > 0:
-                    contributions[feat_idx] = 0.0
+                    contributions[feat_idx] = 0.0  # Zero out false positive
+                # Keep negative values - they are protective
+            else:
+                # User answered YES - should increase risk (positive) or neutral
+                if contributions[feat_idx] < 0:
+                    contributions[feat_idx] = 0.0  # Zero out false negative
+                # Keep positive values - they increase risk
 
         # Zero out Smoking Intensity when user is not a smoker
-        # (smoking_years=0, cigarettes=0 → intensity=0, no contribution)
         if int(data.get("smoker", 0)) == 0:
             if contributions[3] > 0:
                 contributions[3] = 0.0
+
+        # Boost smoking intensity for heavy smokers if needed
+        if int(data.get("smoker", 0)) == 1:
+            smoking_years = int(data.get("smoking_years", 0))
+            cigarettes = int(data.get("cigarettes_per_day", 0))
+            if smoking_years >= 10 and cigarettes >= 10:
+                # Ensure smoking intensity has noticeable impact for heavy smokers
+                if contributions[3] < 0.03:
+                    contributions[3] = max(contributions[3], 0.05)
 
         shap_output = {
             feature_names[i]: float(np.round(contributions[i], 4))
@@ -214,26 +223,46 @@ def predict():
             reverse=True
         ))
 
+        # ── Create input summary for display ─────────────────────────────────
+        input_summary = {
+            "age": int(data.get("age", 0)),
+            "gender": "Male" if int(data.get("gender", 1)) == 1 else "Female",
+            "smoker": "Yes" if int(data.get("smoker", 0)) == 1 else "No",
+            "smoking_years": int(data.get("smoking_years", 0)),
+            "cigarettes_per_day": int(data.get("cigarettes_per_day", 0)),
+            "smoking_intensity": smoking_intensity,
+            "air_pollution_index": int(data.get("air_pollution_index", 3)),
+            "chest_pain": "Yes" if int(data.get("chest_pain", 0)) == 1 else "No",
+            "shortness_of_breath": "Yes" if int(data.get("shortness_of_breath", 0)) == 1 else "No",
+            "chronic_cough": "Yes" if int(data.get("chronic_cough", 0)) == 1 else "No",
+            "asthma": "Yes" if int(data.get("asthma", 0)) == 1 else "No",
+            "family_history_cancer": "Yes" if int(data.get("family_history_cancer", 0)) == 1 else "No",
+            "bmi": float(data.get("bmi", 25))
+        }
+
         predictions_collection.insert_one({
-            "user":        current_user,
-            "input_data":  data,
-            "prediction":  result,
-            "probability": probability_percent,
-            "accuracy":    MODEL_ACCURACY,
-            "shap_values": shap_output,
-            "timestamp":   datetime.utcnow()
+            "user":          current_user,
+            "input_data":    data,
+            "input_summary": input_summary,
+            "prediction":    result,
+            "probability":   probability_percent,
+            "accuracy":      MODEL_ACCURACY,
+            "shap_values":   shap_output,
+            "timestamp":     datetime.utcnow()
         })
 
         return jsonify({
-            "prediction":  result,
-            "probability": probability_percent,
-            "risk_level":  result,
-            "accuracy":    MODEL_ACCURACY,
-            "model_name":  MODEL_NAME,
-            "shap_values": shap_output
+            "prediction":    result,
+            "probability":   probability_percent,
+            "risk_level":    result,
+            "accuracy":      MODEL_ACCURACY,
+            "model_name":    MODEL_NAME,
+            "shap_values":   shap_output,
+            "input_summary": input_summary
         }), 200
 
     except Exception as e:
+        print(f"Prediction error: {str(e)}")
         return jsonify({"message": str(e)}), 500
 
 # ---------------- HISTORY ----------------
