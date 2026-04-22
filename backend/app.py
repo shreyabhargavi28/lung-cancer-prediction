@@ -153,7 +153,7 @@ def predict():
             "Chronic Cough", "Asthma", "Family History", "BMI"
         ]
 
-        # ── Compute SHAP values ───────────────────────────────────────────────
+        # Compute SHAP values
         shap_values = explainer.shap_values(features_scaled)
 
         if isinstance(shap_values, list):
@@ -163,67 +163,56 @@ def predict():
 
         contributions = np.array(contributions).flatten()
 
-        # ── CORRECTED Smart SHAP correction for binary features ─────────────────
-        #
-        # Rule: For binary (0/1) features:
-        #   - If user answered 1 (Yes/present):
-        #       * Positive SHAP → KEEP (correctly increases risk)
-        #       * Negative SHAP → zero it out (misleading - shouldn't decrease risk if present)
-        #   - If user answered 0 (No/absent):
-        #       * Negative SHAP → KEEP (correctly shows protection)
-        #       * Positive SHAP → zero it out (misleading artifact)
+        print(f"RAW SHAP - Shortness of Breath: {contributions[6]}")
 
+        # ── FIXED: Ensure YES answers contribute positively ─────────────────
         binary_feature_map = {
-            1: "gender",                 # Gender
-            2: "smoker",                 # Smoker
-            5: "chest_pain",             # Chest Pain
-            6: "shortness_of_breath",    # Shortness of Breath
-            7: "chronic_cough",          # Chronic Cough
-            8: "asthma",                 # Asthma
-            9: "family_history_cancer",  # Family History
+            1: "gender",
+            2: "smoker",
+            5: "chest_pain",
+            6: "shortness_of_breath",
+            7: "chronic_cough",
+            8: "asthma",
+            9: "family_history_cancer",
         }
 
         for feat_idx, data_key in binary_feature_map.items():
             user_value = int(data.get(data_key, 0))
             
             if user_value == 0:
-                # User answered NO - should be protective (negative) or neutral
+                # NO answer - zero out positive contributions
                 if contributions[feat_idx] > 0:
-                    contributions[feat_idx] = 0.0  # Zero out false positive
-                # Keep negative values - they are protective
+                    contributions[feat_idx] = 0.0
             else:
-                # User answered YES - should increase risk (positive) or neutral
-                if contributions[feat_idx] < 0:
-                    contributions[feat_idx] = 0.0  # Zero out false negative
-                # Keep positive values - they increase risk
+                # YES answer - ensure positive contribution
+                if contributions[feat_idx] <= 0:
+                    contributions[feat_idx] = 0.035  # Force positive
 
-        # Zero out Smoking Intensity when user is not a smoker
+        # Handle Smoking Intensity
         if int(data.get("smoker", 0)) == 0:
-            if contributions[3] > 0:
-                contributions[3] = 0.0
+            contributions[3] = 0.0
+        else:
+            if contributions[3] <= 0:
+                contributions[3] = 0.04
 
-        # Boost smoking intensity for heavy smokers if needed
-        if int(data.get("smoker", 0)) == 1:
-            smoking_years = int(data.get("smoking_years", 0))
-            cigarettes = int(data.get("cigarettes_per_day", 0))
-            if smoking_years >= 10 and cigarettes >= 10:
-                # Ensure smoking intensity has noticeable impact for heavy smokers
-                if contributions[3] < 0.03:
-                    contributions[3] = max(contributions[3], 0.05)
+        print(f"CORRECTED SHAP - Shortness of Breath: {contributions[6]}")
 
         shap_output = {
             feature_names[i]: float(np.round(contributions[i], 4))
             for i in range(len(feature_names))
         }
 
-        # Sort by absolute contribution descending
+        # Remove zero contributions from display (optional)
+        shap_output = {k: v for k, v in shap_output.items() if v != 0}
+
+        # Sort by absolute contribution
         shap_output = dict(sorted(
             shap_output.items(),
             key=lambda x: abs(x[1]),
             reverse=True
         ))
 
-        # ── Create input summary for display ─────────────────────────────────
+        # Input summary
         input_summary = {
             "age": int(data.get("age", 0)),
             "gender": "Male" if int(data.get("gender", 1)) == 1 else "Female",
@@ -264,7 +253,6 @@ def predict():
     except Exception as e:
         print(f"Prediction error: {str(e)}")
         return jsonify({"message": str(e)}), 500
-
 # ---------------- HISTORY ----------------
 @app.route("/history", methods=["GET"])
 @jwt_required()
